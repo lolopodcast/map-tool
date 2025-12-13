@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Map-In Tool: Address Geocoding & Validation (v23 RWD)</title>
+    <!-- Tailwind CSS with Dark Mode Configuration -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        bcg: {
+                            green: '#175c44',
+                            dark: '#104231',
+                            light: '#e8f5e9'
+                        }
+                    },
+                    screens: {
+                        'xs': '475px',
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- PapaParse for CSV handling -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Noto+Serif+TC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans TC', sans-serif; transition: background-color 0.3s, color 0.3s; }
+        h1, h2, h3, .brand-font { font-family: 'Noto Serif TC', serif; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #999; }
+        
+        /* Dark mode scrollbar */
+        .dark ::-webkit-scrollbar-thumb { background: #555; }
+        .dark ::-webkit-scrollbar-thumb:hover { background: #777; }
+
+        /* Tab Styles */
+        .tab-btn { position: relative; transition: all 0.3s; white-space: nowrap; }
+        .tab-btn.active { color: #175c44; font-weight: 700; }
+        .tab-btn.active::after { 
+            content: ''; position: absolute; bottom: -1px; left: 0; right: 0; 
+            height: 3px; background-color: #175c44; border-top-left-radius: 2px; border-top-right-radius: 2px;
+        }
+        .dark .tab-btn.active { color: #4ade80; }
+        .dark .tab-btn.active::after { background-color: #4ade80; }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen bg-[#f5f5f5] text-gray-800 dark:bg-slate-900 dark:text-slate-100">
+
+    <!-- Header -->
+    <header class="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 py-3 px-4 md:px-6 shadow-sm sticky top-0 z-50 transition-colors duration-300">
+        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            <!-- Click to Scroll Top Wrapper -->
+            <div class="flex items-center gap-3 cursor-pointer group select-none" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })" title="回到頂部 (Scroll to Top)">
+                <!-- Logo: MIT -->
+                <div class="w-10 h-10 md:w-12 md:h-12 bg-bcg-green text-white rounded-lg flex items-center justify-center font-bold text-base md:text-lg tracking-widest shadow-md font-serif group-hover:bg-bcg-dark transition-colors duration-300 flex-shrink-0">
+                    MIT
+                </div>
+                <div>
+                    <h1 class="text-lg md:text-xl font-bold text-gray-900 dark:text-white tracking-tight brand-font leading-tight group-hover:text-bcg-green dark:group-hover:text-green-400 transition-colors duration-300">Map-In Tool</h1>
+                    <p class="text-[10px] md:text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider font-light" data-i18n="app_subtitle">地理空間資訊智慧方案</p>
+                </div>
+            </div>
+            
+            <!-- Right Side Controls -->
+            <div class="flex items-center gap-2 md:gap-3 ml-auto">
+                <!-- Language Toggle -->
+                <button id="langBtn" class="flex items-center justify-center px-3 py-1.5 text-xs font-medium border border-gray-300 dark:border-slate-600 rounded text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition" onclick="toggleLanguage()">
+                    EN
+                </button>
+                
+                <!-- Theme Toggle -->
+                <button id="themeBtn" class="p-2 rounded-full text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition" onclick="toggleTheme()">
+                    <i data-lucide="moon" class="w-5 h-5 block dark:hidden"></i>
+                    <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow p-3 md:p-8">
+        
+        <!-- Tabs Navigation (Responsive Scroller) -->
+        <div class="max-w-7xl mx-auto mb-0 overflow-x-auto no-scrollbar">
+            <div class="flex border-b border-gray-200 dark:border-slate-700 justify-between min-w-[320px]">
+                <!-- Left Tab -->
+                <button onclick="switchTab('tab1')" id="btn-tab1" class="tab-btn active px-3 md:px-4 py-3 text-sm text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center flex-shrink-0">
+                    <i data-lucide="map-pin" class="w-4 h-4 inline-block mr-1 mb-0.5"></i> <span data-i18n="tab_1">地址轉經緯度</span>
+                </button>
+                
+                <!-- Center Tab -->
+                <button onclick="switchTab('tab2')" id="btn-tab2" class="tab-btn px-3 md:px-4 py-3 text-sm text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 flex-shrink-0" data-i18n="tab_2">
+                    頁籤二
+                </button>
+                
+                <!-- Right Tab -->
+                <button onclick="switchTab('tab3')" id="btn-tab3" class="tab-btn px-3 md:px-4 py-3 text-sm text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 flex-shrink-0" data-i18n="tab_3">
+                    頁籤三
+                </button>
+            </div>
+        </div>
+
+        <!-- Tab Contents -->
+        <div class="max-w-7xl mx-auto bg-white dark:bg-slate-800 border-x border-b border-gray-200 dark:border-slate-700 shadow-sm transition-colors duration-300 rounded-b-lg">
+            
+            <!-- TAB 1: Geocoding Tool -->
+            <div id="tab1" class="tab-content block">
+                <!-- Section 1: Data Ingestion -->
+                <div class="p-4 md:p-8 border-b border-gray-100 dark:border-slate-700">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between mb-4 md:mb-6 gap-3">
+                        <h2 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2 brand-font">
+                            <span class="text-bcg-green">01.</span> <span data-i18n="sec1_title">CSV資料匯入</span>
+                        </h2>
+                        <button id="testConnBtn" class="text-xs text-gray-500 dark:text-slate-400 hover:text-bcg-green border border-gray-200 dark:border-slate-600 hover:border-bcg-green px-3 py-1.5 transition flex items-center justify-center md:justify-start gap-2 rounded">
+                            <i data-lucide="wifi" class="w-3 h-3"></i> <span data-i18n="server_status">Server Status</span>
+                        </button>
+                    </div>
+                    
+                    <div class="flex flex-col md:flex-row flex-wrap gap-4 md:gap-6 items-end">
+                        <div class="w-full md:w-1/3">
+                            <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase mb-1 block" data-i18n="encoding_label">Encoding Format</label>
+                            <select id="encodingSelect" class="w-full bg-gray-50 dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 text-sm py-2 px-3 focus:outline-none focus:border-bcg-green focus:ring-1 focus:ring-bcg-green transition rounded-none">
+                                <option value="Big5" selected>Big5 (Excel 預設)</option>
+                                <option value="UTF-8">UTF-8 (通用)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="w-full md:w-2/3">
+                            <label for="csvFile" class="flex flex-col items-center justify-center w-full h-24 border-2 border-gray-300 dark:border-slate-600 border-dashed hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition group rounded">
+                                <div class="flex flex-col items-center justify-center pt-2 pb-3">
+                                    <i data-lucide="upload" class="w-6 h-6 text-gray-400 group-hover:text-bcg-green mb-1 transition"></i>
+                                    <p class="text-sm text-gray-500 dark:text-slate-400"><span class="font-semibold group-hover:text-bcg-green transition" data-i18n="upload_click">Click to upload</span> <span data-i18n="upload_drag">or drag CSV</span></p>
+                                </div>
+                                <input id="csvFile" type="file" class="hidden" accept=".csv" />
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div id="fileInfo" class="mt-4 hidden animate-fade-in">
+                        <div class="flex items-center gap-2 text-sm text-bcg-green font-medium bg-green-50 dark:bg-bcg-green/20 p-2 border-l-4 border-bcg-green rounded-r">
+                             <i data-lucide="check-circle" class="w-4 h-4 flex-shrink-0"></i> 
+                             <span id="fileName" class="truncate max-w-[150px] md:max-w-xs"></span> 
+                             <span class="text-gray-500 dark:text-slate-400 text-xs ml-auto font-light whitespace-nowrap"><span data-i18n="total_records">Total Records</span>: <span id="totalRowsBadge" class="font-bold text-gray-800 dark:text-white">0</span></span>
+                        </div>
+                        <div class="mt-2 bg-gray-900 text-gray-300 p-4 text-xs font-mono overflow-x-auto shadow-inner rounded">
+                            <p class="text-gray-500 mb-2 border-b border-gray-700 pb-1 uppercase tracking-wider text-[10px]" data-i18n="preview_title">Data Preview</p>
+                            <pre id="dataPreview">...</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Configuration -->
+                <div id="step2" class="p-4 md:p-8 opacity-50 pointer-events-none transition-opacity duration-500">
+                    <div class="mb-8">
+                        <h2 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2 brand-font mb-4">
+                            <span class="text-bcg-green">02.</span> <span data-i18n="sec2_title">欄位對應與邏輯 (Configuration)</span>
+                        </h2>
+                        
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+                            <!-- Left Col -->
+                            <div class="space-y-6">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-2">
+                                        <span data-i18n="target_addr">Target Address Column</span> <span class="text-red-600">*</span>
+                                    </label>
+                                    <select id="columnSelect" class="w-full bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-800 dark:text-slate-200 text-sm py-2 px-3 focus:border-bcg-green focus:ring-1 focus:ring-bcg-green rounded-none">
+                                        <option value="">Select Column...</option>
+                                    </select>
+                                    <p class="text-[10px] text-gray-400 mt-1 italic" data-i18n="target_addr_desc">Primary field for geocoding.</p>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-2">
+                                        <span data-i18n="company_brand">Company / Brand Name</span>
+                                    </label>
+                                    <div class="flex gap-[-1px]">
+                                        <select id="companySelect" class="w-1/2 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 border-r-0 text-gray-800 dark:text-slate-200 text-sm py-2 px-3 focus:border-bcg-green focus:ring-1 focus:ring-bcg-green focus:z-10 rounded-l-none">
+                                            <option value="">(None)</option>
+                                        </select>
+                                        <input type="text" id="manualCompany" placeholder="Or type manually..." class="w-1/2 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 text-gray-800 dark:text-slate-200 text-sm py-2 px-3 focus:border-bcg-green focus:ring-1 focus:ring-bcg-green focus:z-10 placeholder-gray-400 dark:placeholder-slate-500 rounded-r-none">
+                                    </div>
+                                    <p class="text-[10px] text-gray-400 mt-1 italic" data-i18n="company_desc">Used for reverse geocoding validation & formatting.</p>
+                                </div>
+                            </div>
+
+                            <!-- Right Col -->
+                            <div class="bg-gray-50 dark:bg-slate-700/30 p-4 md:p-6 border border-gray-200 dark:border-slate-600 rounded">
+                                <h4 class="text-xs font-bold text-gray-800 dark:text-slate-200 uppercase mb-4 tracking-widest border-b border-gray-200 dark:border-slate-600 pb-2" data-i18n="params_title">Parameters</h4>
+                                
+                                <div class="mb-5">
+                                    <label class="text-xs font-semibold text-gray-600 dark:text-slate-400 mb-2 block" data-i18n="source_engine">Data Source Engine</label>
+                                    <div class="flex flex-col xs:flex-row gap-3 xs:gap-6">
+                                        <label class="flex items-center cursor-pointer group">
+                                            <input type="radio" name="mapSource" value="arcgis" class="w-4 h-4 text-bcg-green focus:ring-bcg-green border-gray-300" checked>
+                                            <span class="ml-2 text-sm text-gray-700 dark:text-slate-300 font-medium group-hover:text-bcg-green transition">ArcGIS (Recommended)</span>
+                                        </label>
+                                        <label class="flex items-center cursor-pointer group">
+                                            <input type="radio" name="mapSource" value="osm" class="w-4 h-4 text-bcg-green focus:ring-bcg-green border-gray-300">
+                                            <span class="ml-2 text-sm text-gray-600 dark:text-slate-400 group-hover:text-bcg-green transition">OpenStreetMap</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <label class="flex items-start cursor-pointer group">
+                                        <input id="extractName" type="checkbox" class="w-4 h-4 mt-0.5 text-bcg-green border-gray-300 rounded focus:ring-bcg-green flex-shrink-0" checked>
+                                        <div class="ml-2">
+                                            <span class="text-sm font-medium text-gray-800 dark:text-slate-200 group-hover:text-bcg-green transition" data-i18n="reverse_geo">Reverse Geocoding</span>
+                                            <p class="text-xs text-gray-500 dark:text-slate-400 mt-1 leading-relaxed" data-i18n="reverse_desc">
+                                                Retrieves specific place name (e.g. "FamilyMart/Branch Name") after coordinates are found.
+                                            </p>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-8 border-t border-gray-100 dark:border-slate-700 pt-8">
+                        <h2 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2 brand-font mb-6">
+                            <span class="text-bcg-green">03.</span> <span data-i18n="sec3_title">執行範圍設定 (Scope & Execution)</span>
+                        </h2>
+                        
+                        <div class="bg-white dark:bg-slate-700/20 border border-gray-200 dark:border-slate-600 p-4 md:p-6 shadow-[0_2px_8px_rgba(0,0,0,0.04)] rounded">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                                <!-- 1. Row Range -->
+                                <div class="relative">
+                                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 block" data-i18n="scope_row">1. Row Range</label>
+                                    <div class="flex items-center">
+                                        <input type="number" id="startRow" value="1" min="1" class="w-20 border-b-2 border-gray-200 dark:border-slate-600 bg-transparent py-1 text-center font-mono text-sm text-gray-700 dark:text-slate-200 focus:border-bcg-green focus:outline-none transition">
+                                        <span class="text-gray-400 mx-2">—</span>
+                                        <input type="number" id="endRow" class="w-20 border-b-2 border-gray-200 dark:border-slate-600 bg-transparent py-1 text-center font-mono text-sm text-gray-700 dark:text-slate-200 focus:border-bcg-green focus:outline-none transition">
+                                    </div>
+                                    <button id="resetRangeBtn" class="absolute top-0 right-0 text-[10px] text-bcg-green hover:underline" data-i18n="btn_reset">Reset All</button>
+                                </div>
+
+                                <!-- 2. Company Scope -->
+                                <div>
+                                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 block" data-i18n="scope_comp">2. Filter by Company</label>
+                                    <select id="scopeCompany" class="w-full bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-200 text-xs py-2 px-2 focus:border-bcg-green focus:ring-0 rounded">
+                                        <option value="">(All Companies)</option>
+                                    </select>
+                                </div>
+
+                                <!-- 3. City Scope -->
+                                <div>
+                                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 block" data-i18n="scope_city">3. Filter by City</label>
+                                    <select id="scopeCity" class="w-full bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-200 text-xs py-2 px-2 focus:border-bcg-green focus:ring-0 rounded">
+                                        <option value="">(All Cities)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-col md:flex-row justify-between items-end border-t border-dashed border-gray-200 dark:border-slate-600 pt-4 mt-2 gap-4">
+                                <div class="w-full md:w-auto">
+                                    <div class="flex justify-between items-center mb-2 gap-4">
+                                        <label class="text-xs font-bold text-gray-600 dark:text-slate-400" data-i18n="skip_label">Skip Existing Data?</label>
+                                        <div class="text-[10px] space-x-2">
+                                            <button id="selectAllSkip" class="text-bcg-green hover:underline" data-i18n="btn_select_all">Select All</button>
+                                            <span class="text-gray-300">|</span>
+                                            <button id="clearAllSkip" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" data-i18n="btn_clear">Clear</button>
+                                        </div>
+                                    </div>
+                                    <div id="skipColumnsContainer" class="grid grid-cols-2 gap-x-4 gap-y-1 max-h-24 overflow-y-auto pr-2">
+                                        <span class="text-xs text-gray-300 italic" data-i18n="msg_upload_first">Upload data first...</span>
+                                    </div>
+                                </div>
+
+                                <div class="flex gap-3 w-full md:w-auto mt-2 md:mt-0">
+                                    <button id="stopBtn" class="hidden w-full md:w-auto border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 font-medium rounded px-6 py-2.5 text-sm transition items-center justify-center gap-2">
+                                        <i data-lucide="square" class="w-4 h-4"></i> <span data-i18n="btn_stop">Stop</span>
+                                    </button>
+                                    <button id="startBtn" class="w-full md:w-auto bg-bcg-green hover:bg-bcg-dark text-white font-medium rounded px-8 py-2.5 text-sm shadow-md hover:shadow-lg transition flex items-center justify-center gap-2">
+                                        <i data-lucide="play" class="w-4 h-4"></i> <span data-i18n="btn_start">Execute Process</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Result -->
+                <div id="step3" class="hidden border-t-4 border-bcg-green bg-gray-50 dark:bg-slate-900 p-4 md:p-8 animate-fade-in transition-colors">
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-4 gap-4">
+                        <div>
+                            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider" data-i18n="status_title">Status</span>
+                            <div class="flex items-baseline gap-2 flex-wrap">
+                                <span class="text-2xl font-bold text-gray-800 dark:text-white" id="progressText">0%</span>
+                                <span id="statusText" class="text-sm text-gray-500 dark:text-slate-400 truncate max-w-[200px] md:max-w-none">Initializing...</span>
+                            </div>
+                        </div>
+                        <div id="downloadSection" class="hidden w-full md:w-auto">
+                            <button id="downloadBtn" class="w-full md:w-auto bg-gray-800 hover:bg-gray-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-sm font-medium px-6 py-2.5 rounded shadow flex items-center justify-center gap-2 transition">
+                                <i data-lucide="download" class="w-4 h-4"></i> <span data-i18n="btn_export">Export Result</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="w-full bg-gray-200 dark:bg-slate-700 h-1.5 mb-6 rounded-full overflow-hidden">
+                        <div id="progressBar" class="bg-bcg-green h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+
+                    <div class="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 shadow-sm overflow-x-auto transition-colors rounded">
+                        <table class="w-full text-left border-collapse min-w-[600px]">
+                            <thead class="bg-gray-100 dark:bg-slate-700/50 text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider border-b border-gray-200 dark:border-slate-700">
+                                <tr>
+                                    <th class="py-3 px-4 w-1/4" data-i18n="th_addr">Source Address</th>
+                                    <th class="py-3 px-4">Lat</th>
+                                    <th class="py-3 px-4">Lng</th>
+                                    <th class="py-3 px-4 w-1/4 text-bcg-green" data-i18n="th_reverse">Reverse Lookup</th>
+                                    <th class="py-3 px-4" data-i18n="th_status">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="previewTableBody" class="text-sm text-gray-600 dark:text-slate-300 divide-y divide-gray-100 dark:divide-slate-700 font-mono">
+                                <!-- Rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2 -->
+            <div id="tab2" class="tab-content hidden p-8 min-h-[400px]">
+                <div class="flex flex-col items-center justify-center h-full text-gray-400">
+                    <i data-lucide="construction" class="w-12 h-12 mb-4 opacity-50"></i>
+                    <p data-i18n="module_dev">Module Under Development</p>
+                </div>
+            </div>
+
+            <!-- TAB 3 -->
+            <div id="tab3" class="tab-content hidden p-8 min-h-[400px]">
+                <div class="flex flex-col items-center justify-center h-full text-gray-400">
+                    <i data-lucide="construction" class="w-12 h-12 mb-4 opacity-50"></i>
+                    <p data-i18n="module_dev">Module Under Development</p>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white dark:bg-slate-800 border-t border-gray-200 dark:border-slate-700 mt-8 py-2 px-3 text-[10px] text-gray-500 dark:text-slate-400 font-light transition-colors">
+        <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-4 items-center">
+            <!-- Left: Copyright -->
+            <div class="text-center md:text-left space-y-0.5">
+                <p id="footerDate" class="text-gray-800 dark:text-slate-200 font-medium"></p>
+                <p>Version 23.0 (Pro RWD)</p>
+                <p data-i18n="footer_rights">&copy; 2025 Map-In Tool. All Rights Reserved.</p>
+            </div>
+            
+            <!-- Center: Prof -->
+            <div class="text-center">
+                <a href="https://www.ibs.ncnu.edu.tw/index.php/faculty/tenured-professor/299-smlo" target="_blank" class="text-sm font-serif font-bold text-gray-800 dark:text-white hover:text-bcg-green dark:hover:text-bcg-green transition block">
+                    Prof. Shihmin Lo, PhD
+                </a>
+            </div>
+
+            <!-- Right: Links -->
+            <div class="text-center md:text-right flex flex-col items-center md:items-end gap-1">
+                <a href="https://www.ibs.ncnu.edu.tw/" target="_blank" class="hover:text-bcg-green transition font-medium">IBS - International Business Studies</a>
+                <a href="https://rpage.ncnu.edu.tw/" target="_blank" class="hover:text-bcg-green transition font-medium">NCNU - National Chi Nan University</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+        document.getElementById('footerDate').textContent = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
+
+        // --- Tabs Logic ---
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.remove('hidden');
+            document.getElementById('btn-' + tabId).classList.add('active');
+        }
+
+        // --- Multi-language & Theme Logic ---
+        let currentLang = 'zh';
+        const translations = {
+            'zh': {
+                app_subtitle: '地理空間資訊智慧方案',
+                tab_1: '地址轉經緯度',
+                tab_2: '頁籤二',
+                tab_3: '頁籤三',
+                sec1_title: 'CSV資料匯入',
+                server_status: '連線測試',
+                encoding_label: '檔案編碼格式',
+                upload_click: '點擊上傳',
+                upload_drag: '或拖曳檔案至此',
+                total_records: '總筆數',
+                preview_title: '資料預覽 (前 2 筆)',
+                sec2_title: '欄位對應與邏輯',
+                target_addr: '目標地址欄位',
+                target_addr_desc: '進行經緯度查詢的主要依據。',
+                company_brand: '公司 / 品牌名稱',
+                company_desc: '用於逆向反查的驗證與格式化。',
+                params_title: '參數設定',
+                source_engine: '地圖資料來源',
+                reverse_geo: '啟用逆向反查 (取得門市名稱)',
+                reverse_desc: '取得座標後，再次查詢該位置的實際名稱 (例如: 全家/分店名)。',
+                sec3_title: '執行範圍設定',
+                scope_row: '1. 筆數範圍',
+                btn_reset: '重設',
+                scope_comp: '2. 公司範圍篩選',
+                scope_city: '3. 縣市範圍篩選',
+                skip_label: '略過已存在資料?',
+                btn_select_all: '全選',
+                btn_clear: '清除',
+                msg_upload_first: '請先上傳檔案...',
+                btn_stop: '停止',
+                btn_start: '開始執行',
+                status_title: '處理狀態',
+                btn_export: '匯出結果',
+                th_addr: '原始地址',
+                th_reverse: '門市反查結果',
+                th_status: '狀態',
+                module_dev: '模組開發中',
+                footer_rights: '&copy; 2025 Map-In Tool. 版權所有.'
+            },
+            'en': {
+                app_subtitle: 'Geo-Spatial Intelligence Solution',
+                tab_1: 'Address Geocoding',
+                tab_2: 'Tab 2',
+                tab_3: 'Tab 3',
+                sec1_title: 'CSV Data Import',
+                server_status: 'Server Status',
+                encoding_label: 'Encoding Format',
+                upload_click: 'Click to upload',
+                upload_drag: 'or drag CSV',
+                total_records: 'Total Records',
+                preview_title: 'Data Preview (First 2 Rows)',
+                sec2_title: 'Configuration',
+                target_addr: 'Target Address Column',
+                target_addr_desc: 'Primary field for geocoding.',
+                company_brand: 'Company / Brand Name',
+                company_desc: 'Used for reverse geocoding validation & formatting.',
+                params_title: 'Parameters',
+                source_engine: 'Data Source Engine',
+                reverse_geo: 'Reverse Geocoding',
+                reverse_desc: 'Retrieves specific place name (e.g. "FamilyMart/Branch Name") after coordinates are found.',
+                sec3_title: 'Scope & Execution',
+                scope_row: '1. Row Range',
+                btn_reset: 'Reset All',
+                scope_comp: '2. Filter by Company',
+                scope_city: '3. Filter by City',
+                skip_label: 'Skip Existing Data?',
+                btn_select_all: 'Select All',
+                btn_clear: 'Clear',
+                msg_upload_first: 'Upload data first...',
+                btn_stop: 'Stop',
+                btn_start: 'Execute Process',
+                status_title: 'Status',
+                btn_export: 'Export Result',
+                th_addr: 'Source Address',
+                th_reverse: 'Reverse Lookup',
+                th_status: 'Status',
+                module_dev: 'Module Under Development',
+                footer_rights: '&copy; 2025 Map-In Tool. All Rights Reserved.'
+            }
+        };
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            document.getElementById('langBtn').textContent = currentLang === 'zh' ? 'EN' : '繁中';
+            updateTexts();
+        }
+
+        function updateTexts() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (translations[currentLang][key]) {
+                    el.textContent = translations[currentLang][key];
+                }
+            });
+        }
+
+        function toggleTheme() {
+            const html = document.documentElement;
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                html.classList.add('light');
+            } else {
+                html.classList.remove('light');
+                html.classList.add('dark');
+            }
+        }
+
+        // --- Core Logic ---
+        let csvData = [];
+        let isProcessing = false;
+        let shouldStop = false;
+        let currentFile = null;
+        
+        const fileInput = document.getElementById('csvFile');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileNameDisplay = document.getElementById('fileName');
+        const totalRowsBadge = document.getElementById('totalRowsBadge');
+        const dataPreview = document.getElementById('dataPreview');
+        const encodingSelect = document.getElementById('encodingSelect');
+        const step2 = document.getElementById('step2');
+        const columnSelect = document.getElementById('columnSelect');
+        const companySelect = document.getElementById('companySelect');
+        const manualCompanyInput = document.getElementById('manualCompany');
+        const scopeCompany = document.getElementById('scopeCompany');
+        const scopeCity = document.getElementById('scopeCity');
+        const skipColumnsContainer = document.getElementById('skipColumnsContainer');
+        const extractNameCheck = document.getElementById('extractName');
+        const startRowInput = document.getElementById('startRow');
+        const endRowInput = document.getElementById('endRow');
+        const mapSourceRadios = document.getElementsByName('mapSource');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const step3 = document.getElementById('step3');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const statusText = document.getElementById('statusText');
+        const tableBody = document.getElementById('previewTableBody');
+        const downloadSection = document.getElementById('downloadSection');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const testConnBtn = document.getElementById('testConnBtn');
+
+        fileInput.addEventListener('change', (e) => { if(e.target.files[0]) { currentFile = e.target.files[0]; processFile(currentFile); }});
+        encodingSelect.addEventListener('change', () => { if(currentFile) processFile(currentFile); });
+        startBtn.addEventListener('click', startGeocoding);
+        stopBtn.addEventListener('click', () => { shouldStop = true; });
+        downloadBtn.addEventListener('click', downloadCSV);
+        testConnBtn.addEventListener('click', testConnection);
+        document.getElementById('resetRangeBtn').addEventListener('click', () => { startRowInput.value = 1; endRowInput.value = csvData.length; });
+        document.getElementById('selectAllSkip').addEventListener('click', () => document.querySelectorAll('input[name="skipCol"]').forEach(cb => cb.checked = true));
+        document.getElementById('clearAllSkip').addEventListener('click', () => document.querySelectorAll('input[name="skipCol"]').forEach(cb => cb.checked = false));
+        columnSelect.addEventListener('change', populateScopeOptions);
+        companySelect.addEventListener('change', populateScopeOptions);
+
+        function processFile(file) {
+            fileNameDisplay.textContent = file.name;
+            fileInfo.classList.remove('hidden');
+            Papa.parse(file, {
+                header: true, skipEmptyLines: true, encoding: encodingSelect.value,
+                complete: function(results) {
+                    if (results.data && results.data.length > 0) {
+                        csvData = results.data;
+                        const headers = results.meta.fields;
+                        totalRowsBadge.textContent = csvData.length;
+                        dataPreview.textContent = JSON.stringify(results.data.slice(0, 2), null, 2);
+                        startRowInput.value = 1; endRowInput.value = csvData.length;
+                        populateSelects(headers); 
+                        populateSkipColumns(headers);
+                        populateScopeOptions();
+                        step2.classList.remove('opacity-50', 'pointer-events-none');
+                    } else { dataPreview.textContent = "Error: File is empty or cannot be parsed."; }
+                }
+            });
+        }
+
+        function populateSelects(fields) {
+            const createOpt = (val) => { const o = document.createElement('option'); o.value = val; o.textContent = val; return o; };
+            // Reset
+            companySelect.innerHTML = '<option value="">(None)</option>';
+            columnSelect.innerHTML = '<option value="">Select Column...</option>';
+            
+            // Populate
+            fields.forEach(field => {
+                columnSelect.appendChild(createOpt(field));
+                companySelect.appendChild(createOpt(field));
+            });
+
+            // Smart Select Logic - V22
+            // 1. Address: Priority "分公司地址" > "地址"
+            let addrTarget = fields.find(f => f === '分公司地址') || 
+                             fields.find(f => f.includes('分公司地址')) || 
+                             fields.find(f => /地址|addr/i.test(f));
+            if(addrTarget) columnSelect.value = addrTarget;
+
+            // 2. Company: Priority "公司名稱" > contains "公司"
+            let compTarget = fields.find(f => f === '公司名稱') || 
+                             fields.find(f => f.includes('公司名稱')) || 
+                             fields.find(f => /公司|company|brand|店名/i.test(f));
+            if(compTarget) companySelect.value = compTarget;
+            
+            // Sync Scopes immediately
+            populateScopeOptions();
+        }
+        
+        function populateSkipColumns(fields) {
+            skipColumnsContainer.innerHTML = '';
+            fields.forEach(field => {
+                const wrapper = document.createElement('label'); 
+                wrapper.className = "flex items-center space-x-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 p-1 rounded";
+                const cb = document.createElement('input'); 
+                cb.type = "checkbox"; cb.name = "skipCol"; cb.value = field; 
+                cb.className = "w-3 h-3 text-bcg-green border-gray-300 dark:border-slate-500 rounded focus:ring-bcg-green";
+                if(['lat', 'lng', '緯度', '經度', '座標'].some(k => field.toLowerCase().includes(k))) cb.checked = true;
+                const span = document.createElement('span'); 
+                span.className = "text-[11px] text-gray-600 dark:text-slate-300 truncate"; span.textContent = field;
+                wrapper.appendChild(cb); wrapper.appendChild(span);
+                skipColumnsContainer.appendChild(wrapper);
+            });
+        }
+
+        function populateScopeOptions() {
+            const compCol = companySelect.value;
+            const scopeCompanyEl = document.getElementById('scopeCompany');
+            scopeCompanyEl.innerHTML = '<option value="">(All Companies)</option>';
+            if (compCol) {
+                const uniqueComps = new Set();
+                csvData.forEach(row => { if (row[compCol]) uniqueComps.add(row[compCol].trim()); });
+                Array.from(uniqueComps).sort().forEach(c => {
+                    if(!c) return;
+                    const opt = document.createElement('option'); opt.value = c; opt.textContent = c;
+                    scopeCompanyEl.appendChild(opt);
+                });
+            }
+            const addrCol = columnSelect.value;
+            const scopeCityEl = document.getElementById('scopeCity');
+            scopeCityEl.innerHTML = '<option value="">(All Cities)</option>';
+            if (addrCol) {
+                const uniqueCities = new Set();
+                csvData.forEach(row => { 
+                    const addr = row[addrCol];
+                    if (addr) {
+                        const match = addr.match(/^(.+?[縣市])/);
+                        if (match) uniqueCities.add(match[1]);
+                    }
+                });
+                Array.from(uniqueCities).sort().forEach(c => {
+                    const opt = document.createElement('option'); opt.value = c; opt.textContent = c;
+                    scopeCityEl.appendChild(opt);
+                });
+            }
+        }
+
+        async function testConnection() {
+            testConnBtn.innerHTML = '<span class="animate-pulse">Checking...</span>';
+            try {
+                const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&q=Taipei101&limit=1");
+                if (r.ok) {
+                    alert("Connection Successful!");
+                    testConnBtn.innerHTML = '<i data-lucide="check" class="w-3 h-3 text-green-500"></i> Online';
+                } else {
+                    alert(`Connection Failed (HTTP ${r.status})`);
+                    testConnBtn.innerHTML = '<i data-lucide="x" class="w-3 h-3 text-red-500"></i> Error';
+                }
+            } catch (e) { 
+                alert("Network Error!");
+                testConnBtn.innerHTML = '<i data-lucide="wifi-off" class="w-3 h-3 text-red-500"></i> Offline';
+            }
+            lucide.createIcons();
+        }
+
+        async function startGeocoding() {
+            const mainCol = columnSelect.value;
+            const companyCol = companySelect.value;
+            const manualComp = manualCompanyInput.value.trim();
+            const doExtract = extractNameCheck.checked;
+            
+            if (!mainCol) return alert("Please select a Target Address Column.");
+
+            const targetScopeCompany = scopeCompany.value;
+            const targetScopeCity = scopeCity.value;
+            const skipCols = Array.from(document.querySelectorAll('input[name="skipCol"]:checked')).map(cb => cb.value);
+            
+            let startIdx = parseInt(startRowInput.value) - 1;
+            let endIdx = parseInt(endRowInput.value);
+            if (startIdx < 0 || endIdx > csvData.length || startIdx >= endIdx) return alert("Invalid Row Range.");
+
+            let selectedSource = 'osm';
+            for (const radio of mapSourceRadios) { if (radio.checked) selectedSource = radio.value; }
+
+            if (doExtract && csvData.length > 0 && !('參考店名 (Ref Name)' in csvData[0])) { }
+
+            isProcessing = true; shouldStop = false;
+            startBtn.classList.add('hidden'); stopBtn.classList.remove('hidden'); stopBtn.classList.add('flex');
+            step3.classList.remove('hidden'); downloadSection.classList.add('hidden');
+            tableBody.innerHTML = ''; 
+            
+            const lockEls = [columnSelect, companySelect, manualCompanyInput, fileInput, encodingSelect, extractNameCheck, startRowInput, endRowInput, scopeCompany, scopeCity];
+            lockEls.forEach(el => el.disabled = true);
+            document.querySelectorAll('input[type="checkbox"], input[name="mapSource"]').forEach(el => el.disabled = true);
+
+            const totalToProcess = endIdx - startIdx;
+            let processed = 0; let successCount = 0;
+            
+            for (let i = startIdx; i < endIdx; i++) {
+                if (shouldStop) { statusText.textContent = "Stopped by user."; break; }
+                const row = csvData[i];
+                if (doExtract && !row['參考店名 (Ref Name)']) row['參考店名 (Ref Name)'] = '';
+                
+                const mainVal = (row[mainCol] || '').trim();
+                const rowComp = companyCol ? (row[companyCol] || '').trim() : '';
+                const targetCompany = manualComp || rowComp;
+                
+                if (targetScopeCompany && companyCol && rowComp !== targetScopeCompany) {
+                    processed++; if(processed % 200 === 0) updateProgress(processed, totalToProcess); continue;
+                }
+                if (targetScopeCity && !mainVal.includes(targetScopeCity)) {
+                    processed++; if(processed % 200 === 0) updateProgress(processed, totalToProcess); continue;
+                }
+
+                let isSkipped = false;
+                if (skipCols.length > 0 && skipCols.some(col => row[col] && row[col].toString().trim() !== '')) isSkipped = true;
+
+                if(!mainVal || isSkipped) {
+                    processed++;
+                    if (isSkipped && processed % 20 === 0) {
+                         updateProgress(processed, totalToProcess);
+                         statusText.textContent = `Skipping existing data...`;
+                    }
+                    continue;
+                }
+
+                statusText.textContent = `Processing (${i + 1}): ${mainVal}`;
+                let result = { lat: '', lon: '', name: '', status: '...' };
+
+                try {
+                    if (selectedSource === 'osm') {
+                        result = await searchOSM(mainVal);
+                        await new Promise(r => setTimeout(r, 1200)); 
+                    } else {
+                        result = await searchArcGIS(mainVal);
+                        await new Promise(r => setTimeout(r, 300));
+                    }
+
+                    if (doExtract && result.lat && result.lon) {
+                        statusText.textContent = `Validating Store Name...`;
+                        const revResult = await fetchReverseNominatimDetailed(result.lat, result.lon);
+                        
+                        if (revResult) {
+                            let finalName = revResult.displayName;
+                            if (targetCompany) {
+                                const foundBrand = revResult.brand || revResult.name || "";
+                                const isMatch = foundBrand.includes(targetCompany) || targetCompany.includes(foundBrand);
+                                if (isMatch) {
+                                    const branch = revResult.branch || extractBranchFromParens(revResult.name);
+                                    if (branch) finalName = `${targetCompany}/${branch}`;
+                                    else finalName = targetCompany;
+                                    result.status += ' + Verified';
+                                } else {
+                                    finalName = `(Mismatch: ${revResult.name || revResult.displayName})`;
+                                    result.status += ' + Mismatch';
+                                }
+                            } else {
+                                if (revResult.brand && revResult.branch) finalName = `${revResult.brand}/${revResult.branch}`;
+                                else if (revResult.name) finalName = revResult.name;
+                                result.status += ' + Found';
+                            }
+                            result.name = finalName;
+                        } else {
+                            result.name = '(Not Found)';
+                        }
+                        await new Promise(r => setTimeout(r, 1200));
+                    }
+                } catch (err) {
+                    console.error(err);
+                    result.status = 'Error';
+                }
+
+                row['緯度 (Lat)'] = result.lat;
+                row['經度 (Lng)'] = result.lon;
+                if(doExtract) row['參考店名 (Ref Name)'] = result.name || '(Not Found)';
+
+                updateTable(mainVal, result, doExtract);
+                processed++;
+                if (result.lat) successCount++;
+                updateProgress(processed, totalToProcess);
+            }
+
+            isProcessing = false;
+            startBtn.classList.remove('hidden'); stopBtn.classList.add('hidden'); stopBtn.classList.remove('flex');
+            downloadSection.classList.remove('hidden');
+            lockEls.forEach(el => el.disabled = false);
+            document.querySelectorAll('input[type="checkbox"], input[name="mapSource"]').forEach(el => el.disabled = false);
+            statusText.textContent = `Operation Complete.`;
+            statusText.className = "text-sm font-bold text-bcg-green";
+        }
+
+        function updateProgress(processed, total) {
+            const pct = Math.round((processed / total) * 100);
+            progressBar.style.width = `${pct}%`;
+            progressText.textContent = `${pct}%`;
+        }
+        function extractBranchFromParens(name) {
+            if (!name) return "";
+            const match = name.match(/\((.*?)\)/);
+            return match ? match[1] : "";
+        }
+        function updateTable(query, result, showName) {
+            const row = document.createElement('tr');
+            row.className = "border-b border-gray-50 dark:border-slate-700 hover:bg-green-50 dark:hover:bg-slate-700 transition";
+            
+            let statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 dark:bg-slate-600 text-gray-500 dark:text-slate-300">${result.status}</span>`;
+            if(result.status.includes('成功') || result.status.includes('Verified') || result.status.includes('Success')) 
+                statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">SUCCESS</span>`;
+            else if(result.status.includes('Mismatch'))
+                statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300">MISMATCH</span>`;
+            else if(result.status.includes('找不到') || result.status.includes('Error'))
+                statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300">FAILED</span>`;
+
+            row.innerHTML = `
+                <td class="py-2 px-4 truncate max-w-xs text-gray-700 dark:text-slate-300 font-medium" title="${query}">${query}</td>
+                <td class="py-2 px-4 text-xs text-gray-500 dark:text-slate-400">${result.lat ? parseFloat(result.lat).toFixed(5) : '-'}</td>
+                <td class="py-2 px-4 text-xs text-gray-500 dark:text-slate-400">${result.lon ? parseFloat(result.lon).toFixed(5) : '-'}</td>
+                <td class="py-2 px-4 text-xs text-bcg-green dark:text-green-400 font-medium truncate max-w-[150px]" title="${result.name}">${showName ? result.name : '-'}</td>
+                <td class="py-2 px-4">${statusBadge}</td>
+            `;
+            if (tableBody.children.length >= 5) tableBody.removeChild(tableBody.lastChild);
+            tableBody.insertBefore(row, tableBody.firstChild);
+        }
+        function downloadCSV() {
+            const csv = Papa.unparse(csvData);
+            const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            const start = startRowInput.value;
+            const end = endRowInput.value;
+            const rangeStr = (start == 1 && end == csvData.length) ? "" : `_${start}-${end}`;
+            link.download = fileInput.files[0].name.replace(/\.[^/.]+$/, "") + `_Geocoded${rangeStr}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        async function searchOSM(addr) {
+            let res = await fetchNominatim(`台灣 ${addr.replace(/^\d+\s*/,'').trim()}`);
+            if(res) return { lat: res.lat, lon: res.lon, name: '', status: 'Success (OSM)' };
+            return { lat: '', lon: '', name: '', status: 'Not Found' };
+        }
+        async function fetchNominatim(query) {
+            try { return (await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=tw&limit=1`)).json())[0]; } catch { return null; }
+        }
+        async function fetchReverseNominatimDetailed(lat, lon) {
+            try {
+                const d = await (await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&accept-language=zh-TW`, {headers:{'User-Agent':'GeocodeTool/23.0'}})).json();
+                const a = d.address || {};
+                return { brand: a.brand || a.brand_name || "", branch: a.branch || "", name: a.shop || a.amenity || a.building || d.name || "", displayName: d.display_name.split(',')[0].trim() };
+            } catch { return null; }
+        }
+        async function searchArcGIS(addr) {
+            const clean = addr.replace(/^\d+\s*/,'').trim();
+            try {
+                const d = await (await fetch(`https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=${encodeURIComponent(clean+", Taiwan")}&f=json&maxLocations=1&outFields=*`)).json();
+                if(d.candidates?.[0]?.score > 70) return { lat: d.candidates[0].location.y, lon: d.candidates[0].location.x, name: '', status: `Success (ArcGIS)` };
+            } catch {}
+            return { lat: '', lon: '', name: '', status: 'Not Found' };
+        }
+        
+        // Initial defaults
+        updateTexts();
+    </script>
+</body>
+</html>
