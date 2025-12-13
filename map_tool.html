@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地址轉經緯度-欄位對應與設定 (v16)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PapaParse for CSV handling -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800">
+
+    <div class="max-w-7xl mx-auto p-4 md:p-8">
+        <!-- Header -->
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-slate-900 mb-2">📍 地址轉經緯度-欄位對應與設定</h1>
+            <p class="text-slate-500">v16 更新：簡化篩選流程，支援指定公司與縣市範圍處理</p>
+        </header>
+
+        <!-- Main Card -->
+        <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+            
+            <!-- Step 1: Upload -->
+            <div class="p-6 border-b border-slate-100">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">1</div>
+                        <h2 class="text-lg font-semibold">上傳 CSV 檔案</h2>
+                    </div>
+                    <button id="testConnBtn" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-full flex items-center gap-1 transition">
+                        <i data-lucide="wifi" class="w-3 h-3"></i> 測試地圖連線
+                    </button>
+                </div>
+                
+                <div class="mb-4 bg-yellow-50 p-3 rounded-lg border border-yellow-100 flex flex-wrap items-center gap-4">
+                    <div>
+                        <label class="text-sm font-medium text-slate-700 mr-2">檔案編碼：</label>
+                        <select id="encodingSelect" class="bg-white border border-slate-300 text-slate-700 text-sm rounded focus:ring-blue-500 focus:border-blue-500 p-1">
+                            <!-- Default to Big5 as requested -->
+                            <option value="Big5" selected>Big5 (Excel 預設)</option>
+                            <option value="UTF-8">UTF-8 (通用)</option>
+                        </select>
+                    </div>
+                    <p class="text-xs text-slate-500">💡 預設 Big5 以支援 Excel 匯出檔，若亂碼請改 UTF-8</p>
+                </div>
+
+                <div class="flex items-center justify-center w-full">
+                    <label for="csvFile" class="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition">
+                        <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                            <i data-lucide="upload-cloud" class="w-8 h-8 text-slate-400 mb-2"></i>
+                            <p class="text-sm text-slate-500"><span class="font-semibold">點擊上傳</span> 或拖曳檔案至此</p>
+                        </div>
+                        <input id="csvFile" type="file" class="hidden" accept=".csv" />
+                    </label>
+                </div>
+                
+                <div id="fileInfo" class="mt-4 hidden">
+                    <div class="flex items-center gap-2 text-sm text-green-600 font-medium mb-2">
+                         <i data-lucide="check-circle" class="w-4 h-4"></i> <span id="fileName"></span> 
+                         <span class="text-slate-400 text-xs ml-2">(共 <span id="totalRowsBadge">0</span> 筆資料)</span>
+                    </div>
+                    <div class="bg-slate-800 text-slate-200 p-3 rounded-md text-xs font-mono overflow-x-auto">
+                        <p class="text-slate-400 mb-1 border-b border-slate-600 pb-1">資料預覽 (前 2 筆):</p>
+                        <pre id="dataPreview">...</pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Settings -->
+            <div id="step2" class="p-6 border-b border-slate-100 opacity-50 pointer-events-none transition-opacity">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">2</div>
+                    <h2 class="text-lg font-semibold">欄位對應與設定</h2>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <!-- Left: Mapping -->
+                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                        <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                            <i data-lucide="map-pin" class="w-4 h-4 text-blue-600"></i> 欄位對應
+                        </h3>
+                        
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-slate-700 mb-1">
+                                📍 地址欄位 (固定搜尋 [分公司地址]) <span class="text-red-500">*</span>
+                            </label>
+                            <select id="columnSelect" class="w-full bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5">
+                                <option value="">請選擇...</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">
+                                🏢 公司/品牌欄位 (驗證用)
+                            </label>
+                            <div class="flex gap-2">
+                                <select id="companySelect" class="w-1/2 bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5">
+                                    <option value="">(無)</option>
+                                </select>
+                                <input type="text" id="manualCompany" placeholder="或手動輸入 (如: 全家)" class="w-1/2 bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5">
+                            </div>
+                            <p class="text-xs text-slate-500 mt-1">
+                                用於比對反查結果是否符合，並輸出「公司/分店」格式。也用於下方的範圍篩選。
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Right: Map & Reverse Options -->
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                            <i data-lucide="settings" class="w-4 h-4 text-slate-600"></i> 進階選項
+                        </h3>
+                        <div class="mb-4">
+                            <label class="text-xs font-bold text-slate-500 mb-1 block">地圖資料來源</label>
+                            <div class="flex gap-4">
+                                <label class="flex items-center cursor-pointer">
+                                    <input type="radio" name="mapSource" value="arcgis" class="w-4 h-4 text-blue-600 focus:ring-blue-500" checked>
+                                    <span class="ml-2 text-sm text-slate-800 font-bold">ArcGIS (預設推薦)</span>
+                                </label>
+                                <label class="flex items-center cursor-pointer">
+                                    <input type="radio" name="mapSource" value="osm" class="w-4 h-4 text-blue-600 focus:ring-blue-500">
+                                    <span class="ml-2 text-sm text-slate-800">OpenStreetMap</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="flex items-start bg-white p-2 rounded border border-slate-200">
+                            <input id="extractName" type="checkbox" class="w-4 h-4 mt-1 text-blue-600 rounded border-gray-300 focus:ring-blue-500" checked>
+                            <label for="extractName" class="ml-2 text-sm font-medium text-slate-700">
+                                啟用逆向反查 (取得門市名稱)
+                                <span class="block text-xs text-slate-500 font-normal mt-1">
+                                    取得座標後，再次查詢該位置的實際名稱。<br>
+                                    <span class="text-blue-600">目標格式：全家便利商店/台中三厝店</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Batch & Skip Settings (Modified) -->
+                <div class="mb-6 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                        <i data-lucide="layers" class="w-4 h-4"></i> 分批與略過設定
+                    </h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4 pb-4 border-b border-slate-200">
+                        <!-- 1. Row Range -->
+                        <div>
+                            <label class="text-xs font-bold text-slate-500 mb-1 block">1. 前後筆數 (範圍)</label>
+                            <div class="flex items-center gap-2">
+                                <input type="number" id="startRow" value="1" min="1" class="w-20 p-2 border border-slate-300 rounded text-center text-sm">
+                                <span class="text-slate-400">-</span>
+                                <input type="number" id="endRow" class="w-20 p-2 border border-slate-300 rounded text-center text-sm">
+                                <button id="resetRangeBtn" class="text-xs text-blue-600 underline hover:text-blue-800 ml-1">全部</button>
+                            </div>
+                        </div>
+
+                        <!-- 2. Company Scope -->
+                        <div>
+                            <label class="text-xs font-bold text-slate-500 mb-1 block">2. 公司名稱 (範圍)</label>
+                            <select id="scopeCompany" class="w-full bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2">
+                                <option value="">(預設無 - 處理全部)</option>
+                            </select>
+                            <p class="text-[10px] text-slate-400 mt-1">需先設定上方「公司/品牌欄位」才能讀取選項</p>
+                        </div>
+
+                        <!-- 3. City Scope -->
+                        <div>
+                            <label class="text-xs font-bold text-slate-500 mb-1 block">3. 分公司地址-縣市 (範圍)</label>
+                            <select id="scopeCity" class="w-full bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2">
+                                <option value="">(預設無 - 處理全部)</option>
+                            </select>
+                            <p class="text-[10px] text-slate-400 mt-1">依據上方「地址欄位」自動解析縣市</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <label class="block text-sm font-medium text-slate-700">
+                                略過條件：<span class="font-normal text-slate-500">若勾選欄位已有資料則跳過 (適合中斷續傳)</span>
+                            </label>
+                            <div class="text-xs text-blue-600 flex gap-2">
+                                <button id="selectAllSkip" class="hover:underline">全選</button>
+                                <span>|</span>
+                                <button id="clearAllSkip" class="hover:underline">清除</button>
+                            </div>
+                        </div>
+                        <div id="skipColumnsContainer" class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-32 overflow-y-auto bg-white p-3 border border-slate-300 rounded text-sm shadow-sm">
+                            <span class="text-slate-400 text-xs col-span-full">請先上傳檔案...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-4 items-center">
+                    <button id="startBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm px-6 py-3 text-center inline-flex items-center gap-2 transition shadow-md">
+                        <i data-lucide="play" class="w-4 h-4"></i> 開始處理
+                    </button>
+                    <button id="stopBtn" class="hidden bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg text-sm px-6 py-3 text-center items-center gap-2 transition">
+                        <i data-lucide="square" class="w-4 h-4"></i> 停止
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 3: Progress & Preview -->
+            <div id="step3" class="p-6 bg-slate-50 hidden">
+                <div class="mb-4">
+                    <div class="flex justify-between mb-1">
+                        <span class="text-sm font-medium text-blue-700">處理進度</span>
+                        <span class="text-sm font-medium text-blue-700" id="progressText">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-200 rounded-full h-2.5">
+                        <div id="progressBar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                    </div>
+                    <p id="statusText" class="text-xs text-slate-500 mt-2">準備中...</p>
+                </div>
+
+                <div class="overflow-x-auto relative shadow-sm rounded-lg border border-slate-200 bg-white">
+                    <table class="w-full text-sm text-left text-slate-500">
+                        <thead class="text-xs text-slate-700 uppercase bg-slate-100">
+                            <tr>
+                                <th scope="col" class="py-3 px-4 w-1/4">原始地址</th>
+                                <th scope="col" class="py-3 px-4">緯度</th>
+                                <th scope="col" class="py-3 px-4">經度</th>
+                                <th scope="col" class="py-3 px-4 w-1/4 text-blue-600">門市反查結果</th>
+                                <th scope="col" class="py-3 px-4">狀態</th>
+                            </tr>
+                        </thead>
+                        <tbody id="previewTableBody">
+                            <!-- Rows -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div id="downloadSection" class="mt-6 text-center hidden">
+                    <button id="downloadBtn" class="bg-green-600 hover:bg-green-700 text-white text-lg font-bold py-3 px-8 rounded-lg shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 mx-auto">
+                        <i data-lucide="download" class="w-5 h-5"></i> 下載結果 CSV
+                    </button>
+                    <p class="text-xs text-slate-500 mt-2">注意：下載的檔案將包含所有資料。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        let csvData = [];
+        let headers = [];
+        let isProcessing = false;
+        let shouldStop = false;
+        let currentFile = null;
+        
+        // DOM Elements
+        const fileInput = document.getElementById('csvFile');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileNameDisplay = document.getElementById('fileName');
+        const totalRowsBadge = document.getElementById('totalRowsBadge');
+        const dataPreview = document.getElementById('dataPreview');
+        const encodingSelect = document.getElementById('encodingSelect');
+        const step2 = document.getElementById('step2');
+        
+        // Mapping
+        const columnSelect = document.getElementById('columnSelect');
+        const companySelect = document.getElementById('companySelect');
+        const manualCompanyInput = document.getElementById('manualCompany');
+        
+        // Scope Selects
+        const scopeCompany = document.getElementById('scopeCompany');
+        const scopeCity = document.getElementById('scopeCity');
+
+        // Skip & Settings
+        const skipColumnsContainer = document.getElementById('skipColumnsContainer');
+        const selectAllSkipBtn = document.getElementById('selectAllSkip');
+        const clearAllSkipBtn = document.getElementById('clearAllSkip');
+        const extractNameCheck = document.getElementById('extractName');
+        const startRowInput = document.getElementById('startRow');
+        const endRowInput = document.getElementById('endRow');
+        const resetRangeBtn = document.getElementById('resetRangeBtn');
+        const mapSourceRadios = document.getElementsByName('mapSource');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const step3 = document.getElementById('step3');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const statusText = document.getElementById('statusText');
+        const tableBody = document.getElementById('previewTableBody');
+        const downloadSection = document.getElementById('downloadSection');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const testConnBtn = document.getElementById('testConnBtn');
+
+        // Listeners
+        fileInput.addEventListener('change', (e) => { if(e.target.files[0]) { currentFile = e.target.files[0]; processFile(currentFile); }});
+        encodingSelect.addEventListener('change', () => { if(currentFile) processFile(currentFile); });
+        startBtn.addEventListener('click', startGeocoding);
+        stopBtn.addEventListener('click', () => { shouldStop = true; });
+        downloadBtn.addEventListener('click', downloadCSV);
+        testConnBtn.addEventListener('click', testConnection);
+        resetRangeBtn.addEventListener('click', () => { startRowInput.value = 1; endRowInput.value = csvData.length; });
+        selectAllSkipBtn.addEventListener('click', () => document.querySelectorAll('input[name="skipCol"]').forEach(cb => cb.checked = true));
+        clearAllSkipBtn.addEventListener('click', () => document.querySelectorAll('input[name="skipCol"]').forEach(cb => cb.checked = false));
+
+        // When mapping changes, refresh Scope options
+        columnSelect.addEventListener('change', populateScopeOptions);
+        companySelect.addEventListener('change', populateScopeOptions);
+
+        function processFile(file) {
+            fileNameDisplay.textContent = file.name;
+            fileInfo.classList.remove('hidden');
+            Papa.parse(file, {
+                header: true, skipEmptyLines: true, encoding: encodingSelect.value,
+                complete: function(results) {
+                    if (results.data && results.data.length > 0) {
+                        csvData = results.data;
+                        headers = results.meta.fields;
+                        totalRowsBadge.textContent = csvData.length;
+                        dataPreview.textContent = JSON.stringify(results.data.slice(0, 2), null, 2);
+                        startRowInput.value = 1; endRowInput.value = csvData.length;
+                        
+                        populateSelects(headers); 
+                        populateSkipColumns(headers);
+                        populateScopeOptions(); // Init Scopes
+                        
+                        step2.classList.remove('opacity-50', 'pointer-events-none');
+                    } else { dataPreview.textContent = "警告：檔案為空或解析失敗。"; }
+                }
+            });
+        }
+
+        function populateSelects(fields) {
+            const createOpt = (val) => { const o = document.createElement('option'); o.value = val; o.textContent = val; return o; };
+            [columnSelect, companySelect].forEach(sel => sel.innerHTML = '<option value="">(無)</option>');
+            columnSelect.innerHTML = '<option value="">請選擇...</option>';
+            
+            fields.forEach(field => {
+                columnSelect.appendChild(createOpt(field));
+                companySelect.appendChild(createOpt(field));
+                const lower = field.toLowerCase();
+                // 1. Address
+                if (field.includes('分公司地址')) columnSelect.value = field;
+                else if (['addr', '地址'].some(k => lower.includes(k)) && !columnSelect.value) columnSelect.value = field;
+                // 2. Company
+                if (field.includes('公司名稱')) companySelect.value = field;
+                else if (['company', '店名', '品牌'].some(k => lower.includes(k)) && !companySelect.value) companySelect.value = field;
+            });
+        }
+        
+        function populateSkipColumns(fields) {
+            skipColumnsContainer.innerHTML = '';
+            fields.forEach(field => {
+                const wrapper = document.createElement('div'); wrapper.className = "flex items-center";
+                const cb = document.createElement('input'); cb.type = "checkbox"; cb.name = "skipCol"; cb.value = field; cb.id = `skip_${field}`;
+                cb.className = "w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500";
+                if(['lat', 'lng', '緯度', '經度', '座標'].some(k => field.toLowerCase().includes(k))) cb.checked = true;
+                const label = document.createElement('label'); label.htmlFor = `skip_${field}`; label.className = "ml-2 text-sm text-slate-700 truncate cursor-pointer"; label.textContent = field;
+                wrapper.appendChild(cb); wrapper.appendChild(label); skipColumnsContainer.appendChild(wrapper);
+            });
+        }
+
+        function populateScopeOptions() {
+            // Populate Company Scope
+            const compCol = companySelect.value;
+            const scopeCompanyEl = document.getElementById('scopeCompany');
+            scopeCompanyEl.innerHTML = '<option value="">(預設無 - 處理全部)</option>';
+            
+            if (compCol) {
+                const uniqueComps = new Set();
+                csvData.forEach(row => { if (row[compCol]) uniqueComps.add(row[compCol].trim()); });
+                Array.from(uniqueComps).sort().forEach(c => {
+                    if(!c) return;
+                    const opt = document.createElement('option');
+                    opt.value = c; opt.textContent = c;
+                    scopeCompanyEl.appendChild(opt);
+                });
+            }
+
+            // Populate City Scope (From Address Column)
+            const addrCol = columnSelect.value;
+            const scopeCityEl = document.getElementById('scopeCity');
+            scopeCityEl.innerHTML = '<option value="">(預設無 - 處理全部)</option>';
+
+            if (addrCol) {
+                const uniqueCities = new Set();
+                csvData.forEach(row => { 
+                    const addr = row[addrCol];
+                    if (addr) {
+                        // Regex extract city
+                        const match = addr.match(/^(.+?[縣市])/);
+                        if (match) uniqueCities.add(match[1]);
+                    }
+                });
+                Array.from(uniqueCities).sort().forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c; opt.textContent = c;
+                    scopeCityEl.appendChild(opt);
+                });
+            }
+        }
+
+        async function testConnection() {
+            testConnBtn.textContent = "測試中...";
+            try {
+                const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&q=Taipei101&limit=1");
+                if (r.ok) alert("✅ 連線成功！"); else alert(`❌ 連線失敗 (HTTP ${r.status})`);
+            } catch (e) { alert("❌ 網路錯誤！"); }
+            testConnBtn.innerHTML = '<i data-lucide="wifi" class="w-3 h-3"></i> 測試地圖連線';
+            lucide.createIcons();
+        }
+
+        async function startGeocoding() {
+            const mainCol = columnSelect.value;
+            const companyCol = companySelect.value;
+            const manualComp = manualCompanyInput.value.trim();
+            const doExtract = extractNameCheck.checked;
+            
+            // Validate
+            if (!mainCol) return alert("請選擇地址欄位！");
+
+            // Scope Config
+            const targetScopeCompany = scopeCompany.value;
+            const targetScopeCity = scopeCity.value;
+
+            // Skip Config
+            const skipCols = Array.from(document.querySelectorAll('input[name="skipCol"]:checked')).map(cb => cb.value);
+            
+            // Batch Config
+            let startIdx = parseInt(startRowInput.value) - 1;
+            let endIdx = parseInt(endRowInput.value);
+            if (startIdx < 0 || endIdx > csvData.length || startIdx >= endIdx) return alert("處理範圍設定錯誤。");
+
+            let selectedSource = 'osm';
+            for (const radio of mapSourceRadios) { if (radio.checked) selectedSource = radio.value; }
+
+            // Initialize Output Field
+            if (doExtract && csvData.length > 0 && !('參考店名 (Ref Name)' in csvData[0])) {
+                 // handled dynamically
+            }
+
+            isProcessing = true; shouldStop = false;
+            startBtn.classList.add('hidden'); stopBtn.classList.remove('hidden'); stopBtn.classList.add('flex');
+            step3.classList.remove('hidden'); downloadSection.classList.add('hidden');
+            tableBody.innerHTML = ''; 
+            
+            // Lock UI
+            const lockEls = [columnSelect, companySelect, manualCompanyInput, fileInput, encodingSelect, extractNameCheck, startRowInput, endRowInput, scopeCompany, scopeCity];
+            lockEls.forEach(el => el.disabled = true);
+            document.querySelectorAll('input[type="checkbox"], input[name="mapSource"]').forEach(el => el.disabled = true);
+
+            const totalToProcess = endIdx - startIdx;
+            let processed = 0; let successCount = 0;
+            
+            for (let i = startIdx; i < endIdx; i++) {
+                if (shouldStop) { statusText.textContent = "已停止。"; break; }
+                const row = csvData[i];
+                if (doExtract && !row['參考店名 (Ref Name)']) row['參考店名 (Ref Name)'] = '';
+                
+                const mainVal = (row[mainCol] || '').trim();
+                const rowComp = companyCol ? (row[companyCol] || '').trim() : '';
+                const targetCompany = manualComp || rowComp;
+                
+                // --- Scope Logic ---
+                // 1. Company Scope
+                if (targetScopeCompany && companyCol) {
+                    if (rowComp !== targetScopeCompany) {
+                        processed++;
+                        if(processed % 200 === 0) updateProgress(processed, totalToProcess); // update less frequently for speed
+                        continue;
+                    }
+                }
+                
+                // 2. City Scope
+                if (targetScopeCity) {
+                    // Simple check if address string contains the city name
+                    if (!mainVal.includes(targetScopeCity)) {
+                        processed++;
+                        if(processed % 200 === 0) updateProgress(processed, totalToProcess);
+                        continue;
+                    }
+                }
+
+                // --- Skip Logic ---
+                let isSkipped = false;
+                if (skipCols.length > 0 && skipCols.some(col => row[col] && row[col].toString().trim() !== '')) isSkipped = true;
+
+                if(!mainVal || isSkipped) {
+                    processed++;
+                    if (isSkipped && processed % 20 === 0) {
+                         updateProgress(processed, totalToProcess);
+                         statusText.textContent = `略過...`;
+                    }
+                    continue;
+                }
+
+                statusText.textContent = `處理中 (${i + 1}): ${mainVal}`;
+                let result = { lat: '', lon: '', name: '', status: '...' };
+
+                try {
+                    // Search
+                    if (selectedSource === 'osm') {
+                        result = await searchOSM(mainVal);
+                        await new Promise(r => setTimeout(r, 1200)); 
+                    } else {
+                        result = await searchArcGIS(mainVal);
+                        await new Promise(r => setTimeout(r, 300));
+                    }
+
+                    // Reverse & Validate
+                    if (doExtract && result.lat && result.lon) {
+                        statusText.textContent = `驗證門市中...`;
+                        const revResult = await fetchReverseNominatimDetailed(result.lat, result.lon);
+                        
+                        if (revResult) {
+                            let finalName = revResult.displayName;
+                            if (targetCompany) {
+                                const foundBrand = revResult.brand || revResult.name || "";
+                                const isMatch = foundBrand.includes(targetCompany) || targetCompany.includes(foundBrand);
+                                if (isMatch) {
+                                    const branch = revResult.branch || extractBranchFromParens(revResult.name);
+                                    if (branch) finalName = `${targetCompany}/${branch}`;
+                                    else finalName = targetCompany;
+                                    result.status += ' + 符合';
+                                } else {
+                                    finalName = `(不符: ${revResult.name || revResult.displayName})`;
+                                    result.status += ' + 不符';
+                                }
+                            } else {
+                                if (revResult.brand && revResult.branch) finalName = `${revResult.brand}/${revResult.branch}`;
+                                else if (revResult.name) finalName = revResult.name;
+                                result.status += ' + 反查成功';
+                            }
+                            result.name = finalName;
+                        } else {
+                            result.name = '(未找到名稱)';
+                        }
+                        await new Promise(r => setTimeout(r, 1200));
+                    }
+                } catch (err) {
+                    console.error(err);
+                    result.status = 'Error';
+                }
+
+                row['緯度 (Lat)'] = result.lat;
+                row['經度 (Lng)'] = result.lon;
+                if(doExtract) row['參考店名 (Ref Name)'] = result.name || '(未找到)';
+
+                updateTable(mainVal, result, doExtract);
+                processed++;
+                if (result.lat) successCount++;
+                updateProgress(processed, totalToProcess);
+            }
+
+            isProcessing = false;
+            startBtn.classList.remove('hidden'); stopBtn.classList.add('hidden'); stopBtn.classList.remove('flex');
+            downloadSection.classList.remove('hidden');
+            lockEls.forEach(el => el.disabled = false);
+            document.querySelectorAll('input[type="checkbox"], input[name="mapSource"]').forEach(el => el.disabled = false);
+            statusText.textContent = `處理完成！`;
+            statusText.className = "text-sm font-bold text-green-700 mt-2";
+        }
+
+        function updateProgress(processed, total) {
+            const pct = Math.round((processed / total) * 100);
+            progressBar.style.width = `${pct}%`;
+            progressText.textContent = `${pct}%`;
+        }
+        function extractBranchFromParens(name) {
+            if (!name) return "";
+            const match = name.match(/\((.*?)\)/);
+            return match ? match[1] : "";
+        }
+        function updateTable(query, result, showName) {
+            const row = document.createElement('tr');
+            row.className = "border-b hover:bg-slate-50";
+            let color = "text-slate-500";
+            if(result.status.includes('成功') || result.status.includes('符合')) color = "text-green-600 font-bold";
+            else if(result.status.includes('不符')) color = "text-amber-600";
+            else if(result.status.includes('找不到')) color = "text-slate-400";
+            else color = "text-red-600";
+
+            row.innerHTML = `
+                <td class="py-2 px-4 truncate max-w-xs" title="${query}">${query}</td>
+                <td class="py-2 px-4 font-mono text-xs">${result.lat ? parseFloat(result.lat).toFixed(5) : '-'}</td>
+                <td class="py-2 px-4 font-mono text-xs">${result.lon ? parseFloat(result.lon).toFixed(5) : '-'}</td>
+                <td class="py-2 px-4 text-blue-700 text-xs font-medium truncate max-w-[150px]" title="${result.name}">${showName ? result.name : '-'}</td>
+                <td class="py-2 px-4 ${color} text-xs">${result.status}</td>
+            `;
+            if (tableBody.children.length >= 5) tableBody.removeChild(tableBody.lastChild);
+            tableBody.insertBefore(row, tableBody.firstChild);
+        }
+        function downloadCSV() {
+            const csv = Papa.unparse(csvData);
+            const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            const start = startRowInput.value;
+            const end = endRowInput.value;
+            const rangeStr = (start == 1 && end == csvData.length) ? "" : `_${start}-${end}`;
+            link.download = fileInput.files[0].name.replace(/\.[^/.]+$/, "") + `_反查結果${rangeStr}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        async function searchOSM(addr) {
+            let res = await fetchNominatim(`台灣 ${addr.replace(/^\d+\s*/,'').trim()}`);
+            if(res) return { lat: res.lat, lon: res.lon, name: '', status: '成功(OSM)' };
+            return { lat: '', lon: '', name: '', status: '找不到' };
+        }
+        async function fetchNominatim(query) {
+            try { return (await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=tw&limit=1`)).json())[0]; } catch { return null; }
+        }
+        async function fetchReverseNominatimDetailed(lat, lon) {
+            try {
+                const d = await (await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&accept-language=zh-TW`, {headers:{'User-Agent':'GeocodeTool/15.0'}})).json();
+                const a = d.address || {};
+                return { brand: a.brand || a.brand_name || "", branch: a.branch || "", name: a.shop || a.amenity || a.building || d.name || "", displayName: d.display_name.split(',')[0].trim() };
+            } catch { return null; }
+        }
+        async function searchArcGIS(addr) {
+            const clean = addr.replace(/^\d+\s*/,'').trim();
+            try {
+                const d = await (await fetch(`https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=${encodeURIComponent(clean+", Taiwan")}&f=json&maxLocations=1&outFields=*`)).json();
+                if(d.candidates?.[0]?.score > 70) return { lat: d.candidates[0].location.y, lon: d.candidates[0].location.x, name: '', status: `成功(ArcGIS)` };
+            } catch {}
+            return { lat: '', lon: '', name: '', status: '找不到' };
+        }
+    </script>
+</body>
+</html>
